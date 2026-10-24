@@ -36,9 +36,26 @@
         <div class="breadcrumb"><span>YOUR ADVENTURE</span><span class="crumb-slash">/</span><strong id="crumb-name">WELCOME</strong></div>
         <div class="top-actions">
           <span class="saved-label"><span>●</span> SAVED</span>
-          <div class="avatar">✦</div>
+          <button class="profile-switch" id="switch-player" type="button" aria-label="Switch player profile">
+            <span class="avatar">✦</span><span id="active-player">Choose player</span><small>SWITCH</small>
+          </button>
         </div>
       </header>
+      <section id="player-view" class="player-view hidden" aria-labelledby="player-title">
+        <div class="profile-card">
+          <div class="profile-emblem">✦</div>
+          <div class="hero-kicker"><span>✦</span> THE ADVENTURE IS YOURS <span>✦</span></div>
+          <h1 id="player-title">Who is playing?</h1>
+          <p>Choose your name to open your own saved worlds and adventures.</p>
+          <div class="profile-options">
+            <button class="profile-option" type="button" data-player="Nate"><span>♜</span><b>Nate</b><i>→</i></button>
+            <button class="profile-option" type="button" data-player="Hannah"><span>✿</span><b>Hannah</b><i>→</i></button>
+            <button class="profile-option" type="button" data-player="Hudson"><span>⚔</span><b>Hudson</b><i>→</i></button>
+            <button class="profile-option" type="button" data-player="William"><span>✦</span><b>William</b><i>→</i></button>
+          </div>
+          <div id="profile-error" class="inline-error" role="alert"></div>
+        </div>
+      </section>
       <section id="welcome-view" class="welcome-view">
         <div class="hero-kicker"><span>✦</span> A STORY THAT'S YOURS <span>✦</span></div>
         <h1>Every great story<br>starts with <em>you.</em></h1>
@@ -62,8 +79,12 @@
           <p>There are no wrong answers. Pick what feels fun!</p>
         </div>
         <div class="step-progress"><div id="step-progress-fill"></div></div>
-        <div class="step-count" id="step-count">STEP 1 OF 5</div>
+        <div class="step-count" id="step-count">STEP 1 OF 6</div>
         <div id="setup-form" class="setup-card"></div>
+        <div id="setup-pending" class="setup-pending hidden" role="status" aria-live="polite">
+          <span id="setup-pending-text">Preparing the opening scene...</span>
+          <span class="skeleton-paragraph" aria-hidden="true"><i></i><i></i><i></i></span>
+        </div>
         <div class="setup-nav">
           <button id="step-back" class="text-button">← Back</button>
           <button id="step-next" class="primary-button">Next <span>→</span></button>
@@ -114,8 +135,11 @@
         </aside>
       </section>
     </main>
-    <div id="toast" class="toast" role="status"></div>
-    <div id="loading-overlay" class="loading-overlay hidden"><div class="loading-card"><div class="loading-flower">✿</div><h2 id="loading-title">Growing your story...</h2><p>Your adventure is being saved as it unfolds.</p><div class="loading-dots"><i></i><i></i><i></i></div></div></div>
+    <div id="toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+      <span id="toast-mark" class="toast-mark" aria-hidden="true">!</span>
+      <span id="toast-message" class="toast-message"></span>
+      <button id="toast-dismiss" class="toast-dismiss" type="button" aria-label="Dismiss notification">×</button>
+    </div>
   </div>
   <script src="/app.js"></script>
 </body>

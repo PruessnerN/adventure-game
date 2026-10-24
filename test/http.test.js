@@ -6,6 +6,7 @@ const path = require("node:path");
 const http = require("node:http");
 const net = require("node:net");
 const { spawn } = require("node:child_process");
+const { DatabaseSync } = require("node:sqlite");
 
 function listen(server) {
   return new Promise((resolve, reject) => {
@@ -21,18 +22,55 @@ test("world creation, turn updates, and erasing restore authoritative state", as
       stateChanges: { healthDelta: -50, addItems: ["Magic sword"] }
     },
     {
-      narrative: "You find a silver key beside the old map. The path leads toward a friendly village.",
-      stateChanges: { healthDelta: -10, addItems: ["Silver key"], removeItems: ["Compass"] }
+      narrative: "The stone catches Clover, dealing 10 damage. You find a silver key beside the old map. The path leads toward a friendly village.",
+      stateChanges: {}
+    },
+    {
+      narrative: "Hannah's hero discovers a bright little lantern in a quiet cave.",
+      stateChanges: {}
     }
   ];
+  const aiRequests = [];
   const ai = http.createServer(async (request, response) => {
-    for await (const _chunk of request) { /* consume request */ }
-    const answer = replies.shift();
+    let requestBody = "";
+    for await (const chunk of request) requestBody += chunk;
+    const parsedRequest = JSON.parse(requestBody);
+    aiRequests.push(parsedRequest);
+    const requestContent = parsedRequest.messages.map(message => message.content).join("\n");
+    const isSummaryRequest = requestContent.includes("Summarize previous adventure history");
+    const isStateReview = requestContent.includes("state-change extractor") ||
+      requestContent.includes("Return strict JSON with exactly these keys: healthDelta");
+    const answer = isSummaryRequest
+      ? "Clover is exploring the forest, found a silver key, and is heading toward a village."
+      : isStateReview
+        ? {
+          healthDelta: { value: -10, evidence: "The stone catches Clover, dealing 10 damage." },
+          levelDelta: { value: 0, evidence: "" },
+          goldDelta: { value: 0, evidence: "" },
+          addItems: [{ name: "Silver key", evidence: "You find a silver key beside the old map." }],
+          removeItems: []
+        }
+        : replies.shift();
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) } }] }));
+    response.end(JSON.stringify({ choices: [{ message: { content: isSummaryRequest ? answer : JSON.stringify(answer) } }] }));
   });
   const aiPort = await listen(ai);
   const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "story-sprout-http-"));
+  const databasePath = path.join(testDirectory, "story.sqlite");
+  const legacyDb = new DatabaseSync(databasePath);
+  legacyDb.exec(`
+    CREATE TABLE worlds (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      config TEXT NOT NULL,
+      state TEXT NOT NULL,
+      opening TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+  legacyDb.prepare("INSERT INTO worlds (id, name, config, state, opening, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+    .run("legacy-world", "Franklyn", "{}", JSON.stringify({ health: 100, level: 1, gold: 0, inventory: [], relationships: {} }), "An older saved adventure.", "2026-10-24T16:00:00.000Z");
+  legacyDb.close();
   const portProbe = net.createServer();
   const appPort = await listen(portProbe);
   await new Promise(resolve => portProbe.close(resolve));
@@ -40,7 +78,7 @@ test("world creation, turn updates, and erasing restore authoritative state", as
     env: {
       ...process.env,
       PORT: String(appPort),
-      DATABASE_PATH: path.join(testDirectory, "story.sqlite"),
+      DATABASE_PATH: databasePath,
       AI_BASE_URL: `http://127.0.0.1:${aiPort}/v1`,
       AI_MODEL: "test-model"
     },
@@ -69,15 +107,32 @@ test("world creation, turn updates, and erasing restore authoritative state", as
   }
   assert.equal(ready, true, `app did not start: ${appOutput}`);
 
+  const noProfile = await fetch(`${baseUrl}/api/worlds`);
+  assert.equal(noProfile.status, 401);
+  const nateHeaders = { "Content-Type": "application/json", "X-Player-Name": "Nate" };
+  const hannahHeaders = { "Content-Type": "application/json", "X-Player-Name": "Hannah" };
+  const malformedJsonResponse = await fetch(`${baseUrl}/api/worlds`, {
+    method: "POST",
+    headers: nateHeaders,
+    body: '{"config":'
+  });
+  assert.equal(malformedJsonResponse.status, 400);
+  const malformedJson = await malformedJsonResponse.json();
+  assert.equal(malformedJson.code, "INVALID_REQUEST");
+  assert.match(malformedJson.requestId, /^[0-9a-f-]{36}$/i);
+
+  const initialNateWorlds = await fetch(`${baseUrl}/api/worlds`, { headers: nateHeaders });
+  const initialNateData = await initialNateWorlds.json();
+  assert.deepEqual(initialNateData.worlds.map(world => world.name), ["Franklyn"]);
+
   const createdResponse = await fetch(`${baseUrl}/api/worlds`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: nateHeaders,
     body: JSON.stringify({
       config: {
-        setting: "Fantasy",
-        characterKind: "Anthropomorphic animal",
-        species: "Fox",
-        archetype: "Ranger",
+        setting: "Mythical animal kingdom",
+        race: "Fox",
+        archetype: "Forest guardian",
         gender: "Non-binary",
         name: "Clover"
       }
@@ -91,18 +146,64 @@ test("world creation, turn updates, and erasing restore authoritative state", as
 
   const turnResponse = await fetch(`${baseUrl}/api/worlds/${created.id}/turn`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: nateHeaders,
     body: JSON.stringify({ action: "I explore the forest" })
   });
   assert.equal(turnResponse.status, 200);
   const { world: afterTurn } = await turnResponse.json();
   assert.deepEqual(afterTurn.state.inventory, ["Silver key"]);
   assert.equal(afterTurn.state.health, 90);
+  assert.equal(aiRequests.length, 4);
+  assert.match(aiRequests[1].messages[1].content, /Opening scene: A sunlit forest welcomes Clover/);
+  assert.match(aiRequests[2].messages[0].content, /Clover is exploring the forest, found a silver key/);
+  assert.match(aiRequests[2].messages[0].content, /Last 0 action-response pairs/);
+  assert.match(aiRequests[2].messages[0].content, /I explore the forest/);
+  assert.match(aiRequests[3].messages[1].content, /Current authoritative state/);
+  assert.match(aiRequests[3].messages[1].content, /silver key beside the old map/);
 
-  const eraseResponse = await fetch(`${baseUrl}/api/worlds/${created.id}/erase`, { method: "POST" });
+  const eraseResponse = await fetch(`${baseUrl}/api/worlds/${created.id}/erase`, { method: "POST", headers: nateHeaders });
   assert.equal(eraseResponse.status, 200);
   const { world: erased } = await eraseResponse.json();
   assert.deepEqual(erased.state.inventory, []);
   assert.equal(erased.state.health, 100);
   assert.equal(erased.turns.length, 0);
+
+  const hannahCreatedResponse = await fetch(`${baseUrl}/api/worlds`, {
+    method: "POST",
+    headers: hannahHeaders,
+    body: JSON.stringify({
+      config: {
+        setting: "Fantasy",
+        race: "Human",
+        archetype: "Healer",
+        gender: "Girl",
+        name: "Hannah's Hero"
+      }
+    })
+  });
+  assert.equal(hannahCreatedResponse.status, 201);
+  const { world: hannahWorld } = await hannahCreatedResponse.json();
+
+  const nateWorldsResponse = await fetch(`${baseUrl}/api/worlds`, { headers: nateHeaders });
+  const { worlds: nateWorlds } = await nateWorldsResponse.json();
+  assert.deepEqual(nateWorlds.map(world => world.name).sort(), ["Clover", "Franklyn"]);
+  const hannahWorldsResponse = await fetch(`${baseUrl}/api/worlds`, { headers: hannahHeaders });
+  const { worlds: hannahWorlds } = await hannahWorldsResponse.json();
+  assert.deepEqual(hannahWorlds.map(world => world.name), ["Hannah's Hero"]);
+
+  const crossProfileRead = await fetch(`${baseUrl}/api/worlds/${created.id}`, { headers: hannahHeaders });
+  assert.equal(crossProfileRead.status, 404);
+  const crossProfileDelete = await fetch(`${baseUrl}/api/worlds/${hannahWorld.id}`, { method: "DELETE", headers: nateHeaders });
+  assert.equal(crossProfileDelete.status, 404);
+  assert.equal(aiRequests.length, 5);
+
+  const corruptDb = new DatabaseSync(databasePath);
+  corruptDb.prepare("UPDATE worlds SET config = ? WHERE id = ?").run("{", "legacy-world");
+  corruptDb.close();
+  const unexpectedErrorResponse = await fetch(`${baseUrl}/api/worlds`, { headers: nateHeaders });
+  assert.equal(unexpectedErrorResponse.status, 500);
+  const unexpectedError = await unexpectedErrorResponse.json();
+  assert.equal(unexpectedError.code, "INTERNAL_ERROR");
+  assert.match(unexpectedError.requestId, /^[0-9a-f-]{36}$/i);
+  assert.equal(unexpectedError.error, "Something went wrong on the server. Please try again.");
 });
