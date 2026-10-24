@@ -9,7 +9,7 @@ const DATABASE_PATH = process.env.DATABASE_PATH || path.join(__dirname, "data", 
 const AI_BASE_URL = (process.env.AI_BASE_URL || "http://192.168.0.48:33821/v1").replace(/\/+$/, "");
 const AI_MODEL = process.env.AI_MODEL || "local-model";
 const AI_API_KEY = process.env.AI_API_KEY;
-const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 300000);
+const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 900000);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const MAX_BODY_BYTES = 16_000;
 const MAX_WORLD_DESCRIPTION_LENGTH = 1000;
@@ -30,9 +30,14 @@ const CLASS_OPTIONS = {
   "Mythical animal kingdom": ["Forest guardian", "Sky flyer", "Clever trickster", "Healer", "Brave explorer", "Dragon rider"]
 };
 
+function findUnsafeTerms(text) {
+  if (typeof text !== "string") return [];
+  const pattern = /\b(?:porn(?:ography)?|nude|naked|sex(?:ual)?|erotic|xxx|fetish|gore|dismember(?:ment)?|rape|molest(?:ation)?|suicide|self[- ]harm)\b/gi;
+  return [...new Set([...text.matchAll(pattern)].map(match => match[0].toLowerCase()))];
+}
+
 function isUnsafeText(text) {
-  if (typeof text !== "string") return false;
-  return /\b(?:porn(?:ography)?|nude|naked|sex(?:ual)?|erotic|xxx|fetish|gore|dismember(?:ment)?|rape|molest(?:ation)?|suicide|self[- ]harm)\b/i.test(text);
+  return findUnsafeTerms(text).length > 0;
 }
 
 function validateWorldConfig(input) {
@@ -114,8 +119,11 @@ function normalizeStateChanges(changes, narrative, currentState) {
       if (!item || typeof item.name !== "string" || item.name.trim().length === 0 || item.name.trim().length > 48 ||
           !evidenceOccurs(item.evidence) || !itemIsInEvidence(item.name, item.evidence)) continue;
       const name = item.name.trim();
-      const noNegatedClaim = !/\b(?:not|never|cannot|can't|doesn't|don't|didn't|refused to)\b/i.test(item.evidence);
-      const acquisition = noNegatedClaim && /\b(?:finds?|found|pick(?:s|ed)? up|receiv(?:es|ed)|earns?|given|gets|takes?|took|takes possession of|buys?|bought|purchases?|crafts?|makes?)\b/i.test(item.evidence);
+      const noNegatedClaim = !/\b(?:no one|nobody|not|never|cannot|can't|doesn't|don't|didn't|refused to)\b/i.test(item.evidence);
+      const acquisition = noNegatedClaim && (
+        /\b(?:finds?|found|pick(?:s|ed)? up|receiv(?:es|ed)|earns?|given|gave|gets|takes?|took|takes possession of|buys?|bought|purchases?|crafts?|makes?|hands?|handed|presents?|presented)\b/i.test(item.evidence) ||
+        /\bpress(?:es|ed|ing)\b.{0,100}\binto\s+(?:your|his|her|their)\s+(?:arms|hands|palm)\b/i.test(item.evidence)
+      );
       const loss = noNegatedClaim && /\b(?:drops?|dropped|gives? away|gave away|hands? over|trades?|sells?|sold|loses?|lost|spends?|spent|uses? up|consumes?|breaks?|destroys?|confiscates?|surrenders?)\b/i.test(item.evidence);
       const inventoryIndex = next.inventory.findIndex(existing => normalizeItemName(existing) === normalizeItemName(name));
       if (mode === "add" && acquisition && inventoryIndex === -1) next.inventory.push(name);
@@ -291,13 +299,13 @@ function makeStateChangePrompt(world, action, narrative) {
     'levelDelta must be an object with integer value and evidence string. Use value 1 only if the response explicitly says the character leveled up or reached a new level; otherwise use 0 with empty evidence.',
     'addItems and removeItems must be arrays of objects with name and evidence string, for example {"name":"silver key","evidence":"Rowan finds a silver key and puts it in the pack."}.',
     "For every non-zero numeric change and every item change, evidence must be an exact, verbatim substring of the story response and must clearly support the change. Never infer numerical amounts.",
-    "Only add an item if the response explicitly says the player acquired it (found, received, earned, took, bought, crafted, or equivalent). Merely seeing or mentioning an item does not count.",
+    "Only add an item if the response explicitly says the player acquired it (found, received, earned, took, bought, crafted, was handed, was given, or had it pressed into their arms/hands/palm). The evidence must include both the item name and the transfer/acquisition wording; include the full sentence when one transfer verb applies to multiple gifts. Merely seeing or mentioning an item does not count.",
     "Only remove an item that is already in the authoritative inventory, and only if the response explicitly says it was lost, dropped, given away, traded, sold, spent, consumed, broken, destroyed, confiscated, or surrendered. Never invent inventory or remove an unowned item.",
     "Return empty item arrays and zero-valued changes when evidence is ambiguous. Do not infer state changes from the player's attempted action alone."
   ].join("\n");
 }
 
-async function requestAIContent(messages, taskName) {
+async function requestAIContent(messages, taskName, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
   let response;
@@ -311,7 +319,9 @@ async function requestAIContent(messages, taskName) {
       body: JSON.stringify({
         model: AI_MODEL,
         messages,
-        temperature: 0.7
+        temperature: options.temperature ?? 0.7,
+        ...(options.chatTemplateKwargs ? { chat_template_kwargs: options.chatTemplateKwargs } : {}),
+        ...(options.json ? { response_format: { type: "json_object" } } : {})
       }),
       signal: controller.signal
     });
@@ -331,7 +341,11 @@ async function requestAIContent(messages, taskName) {
   } catch {
     throw Object.assign(new Error("The local story service returned invalid JSON. Please check its configuration."), { status: 502 });
   }
-  const content = payload?.choices?.[0]?.message?.content;
+  const choice = payload?.choices?.[0];
+  if (choice?.finish_reason === "length") {
+    throw Object.assign(new Error(`The local story service reached its response limit while trying to ${taskName}. Please try again.`), { status: 502 });
+  }
+  const content = choice?.message?.content;
   if (typeof content !== "string") throw Object.assign(new Error("The local story service returned an unexpected response."), { status: 502 });
   return content.trim();
 }
@@ -343,14 +357,27 @@ async function generateHistorySummary(prompt) {
       content: "You summarize adventure history accurately and concisely. Return only a plain-text summary, not JSON."
     },
     { role: "user", content: prompt }
-  ], "summarize the adventure history");
+  ], "summarize the adventure history", {
+    temperature: 0.2,
+    chatTemplateKwargs: { enable_thinking: false }
+  });
   if (!content) throw Object.assign(new Error("The local story service returned an empty adventure summary."), { status: 502 });
-  if (isUnsafeText(content)) throw Object.assign(new Error("The adventure summary did not pass the safety check. Please try again."), { status: 502 });
+  const blockedTerms = findUnsafeTerms(content);
+  if (blockedTerms.length) {
+    throw Object.assign(
+      new Error(`The adventure summary did not pass the safety check. Matched blocked term(s): ${blockedTerms.join(", ")}.`),
+      { status: 502, blockedTerms }
+    );
+  }
   return content.slice(0, 1200);
 }
 
 async function generateStory(prompt) {
-  const content = await requestAIContent([{ role: "system", content: prompt }], "continue the story");
+  const content = await requestAIContent(
+    [{ role: "system", content: prompt }],
+    "continue the story",
+    { json: true, chatTemplateKwargs: { reasoning_effort: "low" } }
+  );
   let result;
   try {
     const jsonText = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
@@ -371,7 +398,11 @@ async function generateStateChanges(prompt) {
       content: "You are a conservative state-change extractor. Return only valid JSON matching the requested schema. If evidence is uncertain, return no change."
     },
     { role: "user", content: prompt }
-  ], "review player state changes");
+  ], "review player state changes", {
+    temperature: 0,
+    json: true,
+    chatTemplateKwargs: { enable_thinking: false }
+  });
   let changes;
   try {
     const jsonText = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
@@ -438,7 +469,8 @@ async function route(request, response) {
         summary = await generateHistorySummary(summaryPrompt);
         finishAILog(summaryLogId, id, summary, "success");
       } catch (error) {
-        finishAILog(summaryLogId, id, "[Summary generation failed]", `error:${error.status || 502}`);
+        const blockedTerms = Array.isArray(error.blockedTerms) ? ` Matched blocked term(s): ${error.blockedTerms.join(", ")}.` : "";
+        finishAILog(summaryLogId, id, `[Summary generation failed.${blockedTerms}]`, `error:${error.status || 502}`);
         throw error;
       }
       const prompt = makeTurnPrompt(world, turns.slice(-5), action.trim(), summary);
@@ -450,8 +482,10 @@ async function route(request, response) {
         finishAILog(logId, id, "[Generation failed]", `error:${error.status || 502}`);
         throw error;
       }
-      if (isUnsafeText(generated.narrative)) {
-        finishAILog(logId, id, "[Blocked by kid-safety check]", "blocked-output");
+      const blockedTerms = findUnsafeTerms(generated.narrative);
+      if (blockedTerms.length) {
+        console.warn(`[${new Date().toISOString()}] ${request.requestId} story output blocked by safety check; matched term(s): ${blockedTerms.join(", ")}`);
+        finishAILog(logId, id, `[Blocked by kid-safety check; matched term(s): ${blockedTerms.join(", ")}]`, "blocked-output");
         return sendError(response, 422, "The story paused for a safety check. Please try your turn again.", request.requestId, "UNSAFE_STORY");
       }
       finishAILog(logId, id, generated.narrative, "success");
@@ -514,8 +548,10 @@ async function route(request, response) {
       finishAILog(logId, null, "[Generation failed]", `error:${error.status || 502}`);
       throw error;
     }
-    if (isUnsafeText(generated.narrative)) {
-      finishAILog(logId, null, "[Blocked by kid-safety check]", "blocked-output");
+    const blockedTerms = findUnsafeTerms(generated.narrative);
+    if (blockedTerms.length) {
+      console.warn(`[${new Date().toISOString()}] ${request.requestId} opening story blocked by safety check; matched term(s): ${blockedTerms.join(", ")}`);
+      finishAILog(logId, null, `[Blocked by kid-safety check; matched term(s): ${blockedTerms.join(", ")}]`, "blocked-output");
       return sendError(response, 502, "The story service's response did not pass the safety check. Please try again.", request.requestId, "UNSAFE_STORY");
     }
     const id = crypto.randomUUID();
@@ -620,6 +656,7 @@ if (require.main === module) {
 
 module.exports = {
   isUnsafeText,
+  findUnsafeTerms,
   validateWorldConfig,
   normalizeStateChanges,
   makeTurnPrompt,

@@ -5,7 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "story-sprout-unit-"));
 process.env.DATABASE_PATH = path.join(testDirectory, "test.sqlite");
-const { isUnsafeText, validateWorldConfig, normalizeStateChanges, makeTurnPrompt, makeWorldPrompt, makeHistorySummaryPrompt, makeStateChangePrompt } = require("../server");
+const { isUnsafeText, findUnsafeTerms, validateWorldConfig, normalizeStateChanges, makeTurnPrompt, makeWorldPrompt, makeHistorySummaryPrompt, makeStateChangePrompt } = require("../server");
 test.after(() => fs.rmSync(testDirectory, { recursive: true, force: true }));
 
 test("world creation validates setting-specific options and character details", () => {
@@ -58,6 +58,8 @@ test("optional world description is trimmed, length-limited, and included in the
 test("unsafe text is flagged for both player inputs and generated text", () => {
   assert.equal(isUnsafeText("I want to make a cozy garden"), false);
   assert.equal(isUnsafeText("Write an erotic scene"), true);
+  assert.deepEqual(findUnsafeTerms("Naked statues are mentioned; a naked statue and self-harm are discussed."), ["naked", "self-harm"]);
+  assert.deepEqual(findUnsafeTerms("A calm walk through the forest."), []);
 });
 
 test("state updates require explicit evidence, valid amounts, and owned items", () => {
@@ -98,6 +100,27 @@ test("state extraction prompt includes current state, action, and exact story ev
   assert.match(prompt, /Rowan finds a silver key/);
   assert.match(prompt, /evidence must be an exact, verbatim substring/);
   assert.match(prompt, /Never infer numerical amounts/);
+});
+
+test("inventory accepts explicitly handed and pressed gifts but rejects mentions without transfer", () => {
+  const initial = { health: 100, level: 1, gold: 0, inventory: [], relationships: {} };
+  const narrative = [
+    "Maren's niece pressed a folded wool cloak into your arms.",
+    "A farmer gave you a waterskin, half-filled, and a cloth bundle of hardtack and dried apples.",
+    "The apprentice pressed a short knife into your palm.",
+    "No one gave you a weapon or a coin."
+  ].join(" ");
+  const result = normalizeStateChanges({
+    addItems: [
+      { name: "wool cloak", evidence: "pressed a folded wool cloak into your arms" },
+      { name: "waterskin", evidence: "gave you a waterskin, half-filled, and a cloth bundle of hardtack and dried apples" },
+      { name: "cloth bundle of hardtack and dried apples", evidence: "gave you a waterskin, half-filled, and a cloth bundle of hardtack and dried apples" },
+      { name: "short knife", evidence: "pressed a short knife into your palm" },
+      { name: "coin", evidence: "No one gave you a weapon or a coin." },
+      { name: "extra torch", evidence: "A torch would be useful for the caves." }
+    ]
+  }, narrative, initial);
+  assert.deepEqual(result.inventory, ["wool cloak", "waterskin", "cloth bundle of hardtack and dried apples", "short knife"]);
 });
 
 test("turn prompt includes authoritative player state and the requested action", () => {

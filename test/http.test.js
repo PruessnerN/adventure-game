@@ -143,6 +143,9 @@ test("world creation, turn updates, and erasing restore authoritative state", as
   assert.deepEqual(created.state.inventory, []);
   assert.equal(created.state.health, 100);
   assert.equal(created.turns.length, 0);
+  assert.equal(aiRequests[0].max_tokens, undefined);
+  assert.deepEqual(aiRequests[0].response_format, { type: "json_object" });
+  assert.deepEqual(aiRequests[0].chat_template_kwargs, { reasoning_effort: "low" });
 
   const turnResponse = await fetch(`${baseUrl}/api/worlds/${created.id}/turn`, {
     method: "POST",
@@ -154,6 +157,17 @@ test("world creation, turn updates, and erasing restore authoritative state", as
   assert.deepEqual(afterTurn.state.inventory, ["Silver key"]);
   assert.equal(afterTurn.state.health, 90);
   assert.equal(aiRequests.length, 4);
+  assert.equal(aiRequests[1].max_tokens, undefined);
+  assert.equal(aiRequests[1].temperature, 0.2);
+  assert.equal(aiRequests[1].response_format, undefined);
+  assert.deepEqual(aiRequests[1].chat_template_kwargs, { enable_thinking: false });
+  assert.equal(aiRequests[2].max_tokens, undefined);
+  assert.deepEqual(aiRequests[2].response_format, { type: "json_object" });
+  assert.deepEqual(aiRequests[2].chat_template_kwargs, { reasoning_effort: "low" });
+  assert.equal(aiRequests[3].max_tokens, undefined);
+  assert.equal(aiRequests[3].temperature, 0);
+  assert.deepEqual(aiRequests[3].response_format, { type: "json_object" });
+  assert.deepEqual(aiRequests[3].chat_template_kwargs, { enable_thinking: false });
   assert.match(aiRequests[1].messages[1].content, /Opening scene: A sunlit forest welcomes Clover/);
   assert.match(aiRequests[2].messages[0].content, /Clover is exploring the forest, found a silver key/);
   assert.match(aiRequests[2].messages[0].content, /Last 0 action-response pairs/);

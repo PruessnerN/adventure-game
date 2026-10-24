@@ -320,6 +320,15 @@ async function loadWorld(id) {
   }
 }
 
+function scrollStoryToBottom() {
+  requestAnimationFrame(() => {
+    const storyScroll = $("story-scroll");
+    const lastMessage = $("turn-list").lastElementChild || document.querySelector(".opening-card");
+    storyScroll.scrollTop = storyScroll.scrollHeight;
+    lastMessage?.scrollIntoView({ block: "end" });
+  });
+}
+
 function renderGame() {
   if (!activeWorld) return;
   const { config: hero, state } = activeWorld;
@@ -371,7 +380,7 @@ function renderGame() {
     list.append(entry);
   });
   $("erase-turn").disabled = activeWorld.turns.length === 0;
-  $("story-scroll").scrollTop = $("story-scroll").scrollHeight;
+  scrollStoryToBottom();
 }
 
 async function takeAction(action) {
