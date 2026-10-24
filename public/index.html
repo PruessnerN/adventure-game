@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111316">
+  <title>Story Sprout — your next adventure awaits</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="fire-ambience" aria-hidden="true">
+    <span class="flame flame-left"></span>
+    <span class="flame flame-right"></span>
+    <i class="ember ember-one"></i><i class="ember ember-two"></i><i class="ember ember-three"></i>
+    <i class="ember ember-four"></i><i class="ember ember-five"></i>
+  </div>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="Story Sprout home">
+        <span class="brand-mark">✳</span>
+        <span>story<span class="brand-light">sprout</span></span>
+      </a>
+      <div class="side-label">YOUR WORLDS <span id="world-count">0</span></div>
+      <div id="world-list" class="world-list"></div>
+      <button class="new-world side-new" id="side-new"><span>＋</span> New world</button>
+      <div class="sidebar-note">
+        <span class="leaf-icon">✿</span>
+        <p>A little imagination<br>goes a long way.</p>
+        <span class="note-spark">✦</span>
+      </div>
+      <div class="side-footer"><span class="online-dot"></span> Your stories are saved on this device</div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="breadcrumb"><span>YOUR ADVENTURE</span><span class="crumb-slash">/</span><strong id="crumb-name">WELCOME</strong></div>
+        <div class="top-actions">
+          <span class="saved-label"><span>●</span> SAVED</span>
+          <div class="avatar">✦</div>
+        </div>
+      </header>
+      <section id="welcome-view" class="welcome-view">
+        <div class="hero-kicker"><span>✦</span> A STORY THAT'S YOURS <span>✦</span></div>
+        <h1>Every great story<br>starts with <em>you.</em></h1>
+        <p class="hero-copy">Dream up a world, become its hero, and see where your imagination takes you.</p>
+        <button class="primary-button hero-button" id="start-create">Create your first world <span>→</span></button>
+        <div class="hero-art" aria-hidden="true">
+          <span class="art-sun"></span><span class="art-cloud cloud-one"></span><span class="art-cloud cloud-two"></span>
+          <span class="art-hill hill-back"></span><span class="art-hill hill-front"></span>
+          <span class="art-tree tree-one">♣</span><span class="art-tree tree-two">♣</span>
+          <span class="art-flower flower-one">✿</span><span class="art-flower flower-two">✿</span>
+          <span class="art-star star-one">✦</span><span class="art-star star-two">✧</span>
+          <span class="art-path"></span><span class="art-character">♟</span>
+        </div>
+        <div class="welcome-bottom"><span>✿</span> Made for curious minds and brave hearts</div>
+      </section>
+
+      <section id="setup-view" class="setup-view hidden">
+        <div class="setup-heading">
+          <div class="hero-kicker"><span>✦</span> LET'S MAKE SOME MAGIC <span>✦</span></div>
+          <h1>Build your <em>world.</em></h1>
+          <p>There are no wrong answers. Pick what feels fun!</p>
+        </div>
+        <div class="step-progress"><div id="step-progress-fill"></div></div>
+        <div class="step-count" id="step-count">STEP 1 OF 5</div>
+        <div id="setup-form" class="setup-card"></div>
+        <div class="setup-nav">
+          <button id="step-back" class="text-button">← Back</button>
+          <button id="step-next" class="primary-button">Next <span>→</span></button>
+        </div>
+        <div id="setup-error" class="inline-error" role="alert"></div>
+      </section>
+
+      <section id="game-view" class="game-view hidden">
+        <div class="story-column">
+          <div class="story-header">
+            <div><span class="world-tag" id="world-setting"></span><h1 id="game-title"></h1><div class="character-line" id="character-line"></div></div>
+            <button class="delete-world" id="delete-world" title="Delete this world" aria-label="Delete this world">⌫</button>
+          </div>
+          <div class="story-scroll" id="story-scroll">
+            <article class="opening-card"><div class="chapter-label"><span>✧</span> YOUR STORY BEGINS <span>✧</span></div><p id="opening-text"></p></article>
+            <div class="turn-list" id="turn-list"></div>
+          </div>
+          <div class="turn-composer">
+            <div id="action-entry" class="action-entry hidden">
+              <label for="action-input">What would you like to do?</label>
+              <textarea id="action-input" maxlength="1000" rows="3" placeholder="I look around the clearing and ask the friendly owl for directions..."></textarea>
+              <div class="composer-footer"><span id="character-count">0 / 1,000</span><button class="primary-button" id="submit-action">Send turn <span>→</span></button></div>
+            </div>
+            <div class="turn-actions">
+              <button class="turn-button action-button" id="take-turn"><span class="action-icon">✎</span><span><b>Take your turn</b><small>Tell the story what you do</small></span><span class="button-arrow">→</span></button>
+              <button class="turn-button continue-button" id="continue-story"><span class="action-icon">✧</span><span><b>Continue</b><small>See what happens next</small></span><span class="button-arrow">→</span></button>
+              <button class="turn-button erase-button" id="erase-turn"><span class="action-icon">↶</span><span><b>Erase last turn</b><small>Try that moment again</small></span><span class="button-arrow">→</span></button>
+            </div>
+          </div>
+        </div>
+        <aside class="character-panel">
+          <div class="panel-title">YOUR HERO <span>✦</span></div>
+          <div class="hero-badge" id="hero-badge">✦</div>
+          <h2 id="panel-name"></h2><div class="panel-subtitle" id="panel-subtitle"></div>
+          <div class="panel-divider"></div>
+          <div class="stat-heading">STATS <span>✧</span></div>
+          <div class="health-label"><span>♡ Health</span><b id="health-value">100</b></div>
+          <div class="health-track"><div id="health-bar"></div></div>
+          <div class="stat-row"><span>Level</span><b id="level-value">1</b></div>
+          <div class="stat-row"><span>Gold</span><b>✦ <span id="gold-value">0</span></b></div>
+          <div class="panel-divider"></div>
+          <div class="stat-heading">BACKPACK <span id="inventory-count">0</span></div>
+          <div id="inventory-list" class="inventory-list"><div class="empty-inventory">Nothing packed yet.<br>Your adventure is just beginning!</div></div>
+          <div class="panel-divider"></div>
+          <div class="stat-heading">YOUR WORLD <span>✿</span></div>
+          <div class="world-stat" id="panel-setting"></div>
+          <div class="panel-footer">Your adventure is saved automatically.</div>
+        </aside>
+      </section>
+    </main>
+    <div id="toast" class="toast" role="status"></div>
+    <div id="loading-overlay" class="loading-overlay hidden"><div class="loading-card"><div class="loading-flower">✿</div><h2 id="loading-title">Growing your story...</h2><p>Your adventure is being saved as it unfolds.</p><div class="loading-dots"><i></i><i></i><i></i></div></div></div>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

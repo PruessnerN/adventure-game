@@ -1,0 +1,14 @@
+{
+  "name": "story-sprout",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A kid-friendly, AI-assisted text adventure",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}
